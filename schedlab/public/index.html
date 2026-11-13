@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SchedLab · CPU scheduling simulator</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232d5be3'/%3E%3Crect x='4' y='11' width='9' height='10' fill='%23fff'/%3E%3Crect x='14' y='11' width='5' height='10' fill='%23ffd166'/%3E%3Crect x='20' y='11' width='8' height='10' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand"><h1>SchedLab</h1><span>CPU scheduling simulator</span></div>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="sim" aria-selected="true">Simulate</button>
+    <button role="tab" data-tab="compare" aria-selected="false">Compare</button>
+    <button role="tab" data-tab="sweep" aria-selected="false">Parameter sweep</button>
+    <button role="tab" data-tab="learn" aria-selected="false">Algorithms &amp; tests</button>
+    <button role="tab" data-tab="runs" aria-selected="false">Saved runs</button>
+  </nav>
+  <div class="engine" title="Both engines run the same code (scheduler.js)">
+    <span class="dot" id="srvDot"></span><span id="srvText">checking server…</span>
+    <div class="seg" role="group" aria-label="Where to compute">
+      <button id="modeClient" aria-pressed="true">Browser</button>
+      <button id="modeServer" aria-pressed="false" disabled>Server</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside class="side">
+    <section class="card">
+      <h3>Scheduler</h3>
+      <div class="field"><label for="algo">Algorithm</label><select id="algo"></select></div>
+      <div class="field" data-for="RR MLQ MLFQ LOTTERY FAIR"><label for="quantum">Time quantum (ticks)</label><input type="number" id="quantum" value="3" min="1"></div>
+      <div class="field" data-for="PRIO_NP PRIO_P"><label for="aging">Aging: raise priority every N ticks waiting (0 = off)</label><input type="number" id="aging" value="0" min="0"></div>
+      <div class="row2" data-for="MLFQ">
+        <div class="field"><label for="levels">Queue levels</label><input type="number" id="levels" value="3" min="1" max="8"></div>
+        <div class="field"><label for="boost">Boost all every N (0 = off)</label><input type="number" id="boost" value="0" min="0"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="csCost">Context-switch cost</label><input type="number" id="csCost" value="0" min="0"></div>
+        <div class="field"><label for="seed">Random seed</label><input type="number" id="seed" value="1"></div>
+      </div>
+      <p class="hint" id="algoHint"></p>
+    </section>
+
+    <section class="card">
+      <h3>Workload generator</h3>
+      <div class="field"><label for="example">Start from an example</label><select id="example"></select></div>
+      <div class="row2">
+        <div class="field"><label for="w_n">Processes</label><input type="number" id="w_n" value="20" min="1" max="5000"></div>
+        <div class="field"><label for="w_seed">Workload seed</label><input type="number" id="w_seed" value="1"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="w_arrivalMode">Arrivals</label>
+          <select id="w_arrivalMode"><option value="poisson">Poisson</option><option value="fixed">Fixed gap</option><option value="batch">All at t=0</option></select></div>
+        <div class="field"><label for="w_arrivalRate">Rate λ (per tick)</label><input type="number" id="w_arrivalRate" value="0.04" step="0.005" min="0.001"></div>
+      </div>
+      <div class="field"><label for="w_burstDist">Burst distribution</label>
+        <select id="w_burstDist"><option value="exp">Exponential</option><option value="uniform">Uniform</option><option value="normal">Normal</option></select></div>
+      <div class="field"><label for="w_ioFraction">I/O-bound share: <b id="ioFracVal">40%</b> (rest CPU-bound)</label><input type="range" id="w_ioFraction" min="0" max="1" step="0.05" value="0.4"></div>
+      <div class="row2">
+        <div class="field"><label for="w_cpuBurstMean">CPU-bound burst mean</label><input type="number" id="w_cpuBurstMean" value="18" min="1"></div>
+        <div class="field"><label for="w_ioBurstMean">I/O-bound burst mean</label><input type="number" id="w_ioBurstMean" value="3" min="1"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="w_ioTimeMean">I/O wait mean</label><input type="number" id="w_ioTimeMean" value="8" min="1"></div>
+        <div class="field"><label for="w_deadlineSlack">Deadline slack ×</label><input type="number" id="w_deadlineSlack" value="4" step="0.5" min="1"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="w_priorityLevels">Priority levels</label><input type="number" id="w_priorityLevels" value="5" min="1"></div>
+        <div class="field"><label for="w_users">Users (fair-share)</label><input type="number" id="w_users" value="3" min="1"></div>
+      </div>
+      <p class="hint" id="loadEst"></p>
+      <div class="btns"><button class="btn primary" id="btnGen">Generate processes</button></div>
+    </section>
+  </aside>
+
+  <!-- ===================== MAIN ===================== -->
+  <main class="stack">
+
+    <!-- ---------- SIMULATE ---------- -->
+    <div id="tab-sim" class="stack">
+      <section class="card">
+        <div class="head">
+          <h2>Simulation</h2>
+          <div class="btns">
+            <span class="badge engine-badge">not run yet</span>
+            <button class="btn primary" id="btnRun">Run simulation</button>
+            <button class="btn" id="btnSave" disabled title="Needs the server">Save run</button>
+            <button class="btn" id="btnCsv" disabled>Export CSV</button>
+          </div>
+        </div>
+        <div id="simEmpty" class="empty">Pick an algorithm and press <b>Run simulation</b>. The process list is editable below.</div>
+        <div id="simOut" hidden>
+          <div class="tiles" id="tiles"></div>
+        </div>
+      </section>
+
+      <section class="card" id="ganttCard" hidden>
+        <div class="head"><h3>Gantt timeline</h3>
+          <label class="small muted">Zoom <input type="range" id="zoom" min="1" max="40" value="10" style="width:120px;vertical-align:middle"></label></div>
+        <div class="gantt-wrap" id="gantt"></div>
+        <div class="legend"><span><i style="background:repeating-linear-gradient(45deg,#888 0 2px,transparent 2px 4px)"></i>context switch</span><span><i style="border:1px dashed var(--muted)"></i>CPU idle</span><span>▲ arrival</span></div>
+        <div class="play">
+          <button class="btn sm" id="btnPlay" aria-label="Play or pause">▶ Play</button>
+          <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Time">
+          <b class="num" id="scrubT">t = 0</b>
+        </div>
+        <div class="state">
+          <div><h4>On the CPU</h4><div id="stRun"></div></div>
+          <div><h4>Ready queue (front first)</h4><div id="stReady"></div></div>
+          <div><h4>Waiting for I/O</h4><div id="stIo"></div></div>
+        </div>
+      </section>
+
+      <section class="card" id="resCard" hidden>
+        <h3>Per-process results</h3>
+        <div class="tbl-wrap scroll-y"><table id="resTbl"></table></div>
+        <p class="hint" style="margin-top:8px">Waiting = ticks in the ready queue. Turnaround = completion − arrival. Response = first run − arrival. Share = CPU time ÷ turnaround (used for Jain's fairness index).</p>
+      </section>
+
+      <section class="card">
+        <details open>
+          <summary style="cursor:pointer"><h3 style="display:inline">Processes (<span id="procCount">0</span>)</h3></summary>
+          <p class="hint" style="margin-top:6px">Bursts alternate CPU, I/O, CPU… e.g. <code>5,3,4</code> = 5 CPU, 3 I/O, 4 CPU. Lower priority number = more important. Deadline is an absolute time (used by EDF).</p>
+          <div class="btns" style="margin-bottom:8px">
+            <button class="btn sm" id="btnAddProc">Add process</button>
+            <button class="btn sm" id="btnClear">Clear all</button>
+            <button class="btn sm" id="btnExpJson">Export JSON</button>
+            <button class="btn sm" id="btnImpJson">Import JSON</button>
+            <input type="file" id="fileJson" accept="application/json,.json" hidden>
+          </div>
+          <div class="tbl-wrap scroll-y"><table id="procTbl"></table></div>
+        </details>
+      </section>
+    </div>
+
+    <!-- ---------- COMPARE ---------- -->
+    <div id="tab-compare" class="stack" hidden>
+      <section class="card">
+        <div class="head"><h2>Compare schedulers</h2><span class="badge engine-badge">not run yet</span></div>
+        <p class="hint">Each run draws a fresh random workload (seed, seed+1, …) using the generator settings on the left. Every algorithm sees the same workloads, so the comparison is paired.</p>
+        <div class="chips" id="cmpAlgos" style="margin-bottom:10px"></div>
+        <div class="row2" style="max-width:420px">
+          <div class="field"><label for="cmpRuns">Replications (30+ recommended)</label><input type="number" id="cmpRuns" value="30" min="2" max="200"></div>
+          <div class="field"><label for="cmpSeed">First seed</label><input type="number" id="cmpSeed" value="1"></div>
+        </div>
+        <div class="btns"><button class="btn primary" id="btnCmp">Run comparison</button></div>
+      </section>
+      <div id="cmpOut" class="stack" hidden>
+        <section class="card"><h3>Mean with 95% confidence interval</h3><p class="hint">Error bars are 95% CIs across replications. Lower is better except throughput, CPU utilization and fairness.</p><div class="chart-grid" id="cmpCharts"></div></section>
+        <section class="card"><h3>All metrics</h3><div class="tbl-wrap"><table id="cmpTbl"></table></div><p class="hint" style="margin-top:8px">Green = best algorithm for that metric (mean).</p></section>
+        <section class="card"><h3>Is the difference real? Paired t-test</h3>
+          <div class="row2" style="max-width:640px;grid-template-columns:1fr 1fr 1fr">
+            <div class="field"><label for="ttMetric">Metric</label><select id="ttMetric"></select></div>
+            <div class="field"><label for="ttA">Algorithm A</label><select id="ttA"></select></div>
+            <div class="field"><label for="ttB">Algorithm B</label><select id="ttB"></select></div>
+          </div>
+          <div id="ttOut"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ---------- SWEEP ---------- -->
+    <div id="tab-sweep" class="stack" hidden>
+      <section class="card">
+        <div class="head"><h2>Parameter sweep</h2><span class="badge engine-badge">not run yet</span></div>
+        <p class="hint">Vary one parameter while everything else stays as set on the left. Each point is the mean of several replications.</p>
+        <div class="chips" id="swAlgos" style="margin-bottom:10px"></div>
+        <div class="row2" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
+          <div class="field"><label for="swParam">Vary</label><select id="swParam"></select></div>
+          <div class="field"><label for="swFrom">From</label><input type="number" id="swFrom" step="any"></div>
+          <div class="field"><label for="swTo">To</label><input type="number" id="swTo" step="any"></div>
+          <div class="field"><label for="swStep">Step</label><input type="number" id="swStep" step="any"></div>
+          <div class="field"><label for="swMetric">Measure</label><select id="swMetric"></select></div>
+          <div class="field"><label for="swRuns">Replications</label><input type="number" id="swRuns" value="10" min="2" max="100"></div>
+        </div>
+        <div class="btns"><button class="btn primary" id="btnSweep">Run sweep</button></div>
+      </section>
+      <div id="swOut" class="stack" hidden>
+        <section class="card"><h3 id="swTitle"></h3><canvas id="swCanvas"></canvas><div class="legend" id="swLegend"></div></section>
+        <section class="card"><div class="tbl-wrap scroll-y"><table id="swTbl"></table></div></section>
+      </div>
+    </div>
+
+    <!-- ---------- LEARN ---------- -->
+    <div id="tab-learn" class="stack" hidden>
+      <section class="card">
+        <div class="head"><h2>Validation suite</h2>
+          <div class="btns"><button class="btn" id="btnTestClient">Run in browser</button><button class="btn" id="btnTestServer" disabled>Run on server</button></div></div>
+        <p class="hint">Hand-computed schedules (the FCFS and Round Robin worked examples, SRTF, SJF, priority, EDF), edge cases, determinism, and invariants that must hold for every scheduler.</p>
+        <div id="testOut"></div>
+      </section>
+      <section class="card"><h2 style="margin-bottom:8px">Conventions used by the simulator</h2><div id="conventions"></div></section>
+      <section><div class="algo-grid" id="algoGrid"></div></section>
+      <section class="card"><h2 style="margin-bottom:8px">Metric definitions</h2><div class="tbl-wrap"><table id="metricTbl"></table></div></section>
+      <section class="card"><h2 style="margin-bottom:8px">Side-by-side summary</h2><div class="tbl-wrap"><table id="summaryTbl"></table></div></section>
+    </div>
+
+    <!-- ---------- RUNS ---------- -->
+    <div id="tab-runs" class="stack" hidden>
+      <section class="card">
+        <div class="head"><h2>Saved runs</h2><button class="btn sm" id="btnRefreshRuns">Refresh</button></div>
+        <div id="runsOut"></div>
+      </section>
+    </div>
+
+  </main>
+</div>
+
+<script src="scheduler.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

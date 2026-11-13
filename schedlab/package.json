@@ -1,0 +1,9 @@
+{
+  "name": "schedlab",
+  "version": "1.0.0",
+  "description": "CPU scheduling simulator — client + server, zero dependencies",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test": "node tests/run_tests.js" },
+  "engines": { "node": ">=16" },
+  "license": "MIT"
+}
